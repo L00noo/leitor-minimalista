@@ -87,7 +87,7 @@ def limpar_campos():
     st.session_state.texto_saida = ""
 
 # --- INTERFACE DO APP ---
-st.title("⚡ Leitor para quem tem pressa")
+st.title("⚡ Textos Minimalistas Para Quem Tem Pressa")
 st.caption("Cole o texto bagunçado e receba parágrafos limpos, prontos para ler.")
 
 # Campo de entrada de texto (vinculado ao session_state)
