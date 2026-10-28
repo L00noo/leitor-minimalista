@@ -4,10 +4,8 @@ import requests
 from readability import Document
 from groq import Groq
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Leitor Minimalista IA", page_icon="⚡", layout="centered")
 
-# --- CSS PERSONALIZADO (mantido) ---
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -41,30 +39,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZAÇÃO DO ESTADO DA SESSÃO ---
 if "texto_entrada" not in st.session_state:
     st.session_state.texto_entrada = ""
 if "texto_saida" not in st.session_state:
     st.session_state.texto_saida = ""
 
-# --- FUNÇÕES DE PROCESSAMENTO ---
 
 @st.cache_data(ttl=600) # Cache para evitar chamadas repetidas ao mesmo link
 def extrair_texto_do_link(url):
     """Extrai o texto principal de uma página web comum."""
     try:
-        # User-Agent para evitar bloqueios simples
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         
-        # Usa readability para extrair o conteúdo do artigo
         doc = Document(response.text)
         texto_extraido = doc.summary()
         
-        # Remove tags HTML que possam ter sobrado
         texto_limpo = re.sub(r'<[^>]+>', ' ', texto_extraido)
-        # Normaliza espaços
         texto_limpo = re.sub(r'\s+', ' ', texto_limpo).strip()
         
         return texto_limpo
@@ -75,7 +67,6 @@ def extrair_texto_do_link(url):
 def limpar_com_ia(texto):
     """Usa o Groq para limpar o texto."""
     try:
-        # A chave deve estar nos Secrets do Streamlit
         api_key = st.secrets.get("GROQ_API_KEY")
         if not api_key:
             st.error("Chave da API do Groq não configurada nos Secrets.")
@@ -94,8 +85,8 @@ def limpar_com_ia(texto):
         
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile", # Modelo rápido e gratuito
-            temperature=0.0, # Para ser o mais determinístico possível
+            model="openai/gpt-oss-120b",
+            temperature=0.0,
         )
         
         return chat_completion.choices[0].message.content.strip()
@@ -131,7 +122,6 @@ def limpar_campos():
     st.session_state.texto_entrada = ""
     st.session_state.texto_saida = ""
 
-# --- INTERFACE DO APP ---
 st.title("⚡ Leitor para quem tem pressa")
 st.caption("Cole um texto ou link. A IA limpa a sujeira e formata para leitura rápida.")
 
@@ -153,7 +143,6 @@ if botao_processar:
         with st.spinner("Processando... Isso pode levar alguns segundos."):
             texto_para_ia = texto_bruto
             
-            # 1. Se for um link, tenta extrair o texto primeiro
             if texto_bruto.strip().startswith("http"):
                 st.info("Link detectado. Extraindo conteúdo...")
                 texto_extraido = extrair_texto_do_link(texto_bruto.strip())
@@ -162,7 +151,6 @@ if botao_processar:
                     st.stop()
                 texto_para_ia = texto_extraido
 
-            # 2. Limpa com a IA
             st.info("Limpando com IA...")
             texto_limpo = limpar_com_ia(texto_para_ia)
             
