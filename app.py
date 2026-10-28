@@ -122,7 +122,7 @@ def limpar_campos():
     st.session_state.texto_entrada = ""
     st.session_state.texto_saida = ""
 
-st.title("⚡ Leitor para quem tem pressa")
+st.title("⚡ Destilador de Texto Para Quem Tem Pressa")
 st.caption("Cole um texto ou link. A IA limpa a sujeira e formata para leitura rápida.")
 
 texto_bruto = st.text_area(
