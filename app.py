@@ -1,11 +1,14 @@
 import streamlit as st
 import re
 import requests
+import base64
 from readability import Document
 from groq import Groq
 
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Leitor Minimalista IA", page_icon="⚡", layout="centered")
 
+# --- CSS PERSONALIZADO ---
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -23,6 +26,7 @@ st.markdown("""
         background-color: #25D366;
         color: white;
         font-weight: bold;
+        margin-bottom: 10px;
     }
     .stButton>button:hover {
         background-color: #1EBE5D;
@@ -39,39 +43,33 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- INICIALIZAÇÃO DO ESTADO DA SESSÃO ---
 if "texto_entrada" not in st.session_state:
     st.session_state.texto_entrada = ""
 if "texto_saida" not in st.session_state:
     st.session_state.texto_saida = ""
 
+# --- FUNÇÕES DE PROCESSAMENTO ---
 
-@st.cache_data(ttl=600) # Cache para evitar chamadas repetidas ao mesmo link
+@st.cache_data(ttl=600)
 def extrair_texto_do_link(url):
-    """Extrai o texto principal de uma página web comum."""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        
         doc = Document(response.text)
         texto_extraido = doc.summary()
-        
         texto_limpo = re.sub(r'<[^>]+>', ' ', texto_extraido)
         texto_limpo = re.sub(r'\s+', ' ', texto_limpo).strip()
-        
         return texto_limpo
-    except Exception as e:
-        st.error(f"Erro ao extrair do link: {e}")
+    except Exception:
         return None
 
 def limpar_com_ia(texto):
-    """Usa o Groq para limpar o texto."""
     try:
         api_key = st.secrets.get("GROQ_API_KEY")
         if not api_key:
-            st.error("Chave da API do Groq não configurada nos Secrets.")
             return None
-
         client = Groq(api_key=api_key)
         
         prompt = f"""
@@ -88,14 +86,38 @@ def limpar_com_ia(texto):
             model="openai/gpt-oss-120b",
             temperature=0.0,
         )
-        
         return chat_completion.choices[0].message.content.strip()
-    except Exception as e:
-        st.error(f"Erro na limpeza com IA: {e}")
+    except Exception:
+        return None
+
+def transcrever_imagem(imagem_bytes):
+    try:
+        api_key = st.secrets.get("GROQ_API_KEY")
+        if not api_key:
+            return None
+        client = Groq(api_key=api_key)
+        
+        base64_image = base64.b64encode(imagem_bytes).decode('utf-8')
+        
+        completion = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Transcreva fielmente todo o texto visível nesta imagem. Retorne apenas o texto, sem comentários ou formatação extra."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]
+                }
+            ],
+            temperature=0.0,
+            max_completion_tokens=1024,
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception:
         return None
 
 def formatar_para_whatsapp(texto, limite_caracteres=100):
-    """Quebra o texto em blocos respeitando o fim das palavras."""
     if not texto: return ""
     texto_limpo = re.sub(r'\s+', ' ', texto).strip()
     
@@ -122,25 +144,40 @@ def limpar_campos():
     st.session_state.texto_entrada = ""
     st.session_state.texto_saida = ""
 
-st.title("⚡ Destilador de Texto Para Quem Tem Pressa")
-st.caption("Cole um texto ou link. A IA limpa a sujeira e formata para leitura rápida.")
+# --- INTERFACE DO APP ---
+st.title("⚡ Leitor para quem tem pressa")
+st.caption("Cole um texto, link ou envie uma imagem. A IA limpa e formata para leitura rápida.")
 
+# Campo de entrada de texto
 texto_bruto = st.text_area(
     "Cole o texto ou link aqui:", 
-    height=250, 
-    placeholder="Cole aqui o texto ou o link da matéria (ex: https://exemplo.com/noticia)...",
+    height=200, 
+    placeholder="Cole aqui o texto ou o link da matéria...",
     key="texto_entrada"
 )
 
-col1, col2 = st.columns([3, 1])
-with col1:
-    botao_processar = st.button("Limpar e Formatar")
-with col2:
+# Botão de ação para Texto
+col_texto, col_limpar = st.columns([3, 1])
+with col_texto:
+    botao_processar_texto = st.button("Limpar e Formatar Texto")
+with col_limpar:
     st.button("Limpar 🗑️", on_click=limpar_campos)
 
-if botao_processar:
+st.divider()
+
+# Campo de upload de imagem
+imagem_upload = st.file_uploader("Ou envie uma captura de tela (print) para transcrever:", type=["png", "jpg", "jpeg"])
+
+if imagem_upload is not None:
+    st.image(imagem_upload, caption="Imagem carregada", use_container_width=True)
+    botao_transcrever = st.button("Transcrever Imagem")
+
+# --- LÓGICA DE AÇÃO ---
+
+# Ação para Texto/Link
+if botao_processar_texto:
     if texto_bruto.strip():
-        with st.spinner("Processando... Isso pode levar alguns segundos."):
+        with st.spinner("Processando texto... Isso pode levar alguns segundos."):
             texto_para_ia = texto_bruto
             
             if texto_bruto.strip().startswith("http"):
@@ -155,14 +192,22 @@ if botao_processar:
             texto_limpo = limpar_com_ia(texto_para_ia)
             
             if texto_limpo:
-                # 3. Formata
                 st.session_state.texto_saida = formatar_para_whatsapp(texto_limpo, limite_caracteres=100)
             else:
-                st.warning("A limpeza com IA falhou. O texto original será usado.")
                 st.session_state.texto_saida = formatar_para_whatsapp(texto_para_ia, limite_caracteres=100)
     else:
         st.warning("Por favor, cole algum texto ou link antes de clicar no botão.")
 
+# Ação para Imagem
+if imagem_upload is not None and 'botao_transcrever' in locals() and botao_transcrever:
+    with st.spinner("Lendo a imagem..."):
+        texto_transcrito = transcrever_imagem(imagem_upload.getvalue())
+        if texto_transcrito:
+            st.session_state.texto_saida = formatar_para_whatsapp(texto_transcrito, limite_caracteres=100)
+        else:
+            st.warning("Não foi possível transcrever a imagem. Verifique a qualidade ou tente novamente.")
+
+# --- EXIBIÇÃO DO RESULTADO ---
 if st.session_state.texto_saida:
     st.divider()
     st.subheader("Texto Pronto para Leitura:")
